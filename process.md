@@ -30,3 +30,29 @@ fork两次是为了使worker进程是孤儿进程，那父进程就不需要wait
 
 + 挂起就绪
 + 挂起等待
+
+## PS进程状态
+
++ D: 不可中断睡眠，一般由IO引起，同步IO在做读或写操作时，cpu不能做其它事情，只能等待，这时进程处于这种状态
++ R(unable): 进程处于运行或就绪状态
++ I(dle)：空闲状态
++ S(leeping): 可中断睡眠
++ T(raced): 跟踪状态，已停止的，进程收到SIGSTOP、SIGSTP、SIGTIN、SIGTOU信号后停止运行
++ Z(ombie): 僵尸进程
++ <: 高优先级（not nice to other users）
++ N: 低优先级（nice to other users）
++ l: 多线程
++ +: 在前台进程组
++ s: Session Leader
+
+## nice
+
+取值范围是-20至19，一共40个级别。值越小，表示进程优先级越高。
+
+## 调度
+
+## Reference
+
++ [linux进程状态查询——ps](https://blog.51cto.com/desert/335979)
++ [理解Linux进程](https://www.kancloud.cn/kancloud/understanding-linux-processes/52200)
++ [深入 Linux 的进程优先级](https://linux.cn/article-7325-1.html)
