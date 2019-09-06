@@ -1,3 +1,25 @@
+# Rehash
+
+## 渐进式Rehash
+
+要rehash的时候创建一个新的表，每次操作同时修改两个哈希表，并且rehash部分的key。考虑一直没有请求的情况，可以做一个定时触发源。如果没有rehash完空间又用完了，可以考虑忽略这次的rehash，或者直接STW（Stop The World）把rehash做完，又或者增加每次rehash的key数量加速。
+
+## 前缀分层
+
+根据hash的前缀，转发请求到不同的哈希表，每个哈希表独立生长。假设hash分布平均，那每个哈希表不会太大，rehash消耗也不大。
+
+## 二次方增长
+
+如果按二次方增长，rehash的时候要么就还在原来的bucket，要么就在两倍的位置，可以直接按bit确定，不需要计算取余。
+
+## 多阶hash列表
+
+分为多阶哈希表（每阶大小是质数），发现哈希冲突时往高阶溢出（高阶更小）。每一阶事实上也是独立，需要扩容的时候可以考虑增加新一阶哈希表，或者对某一阶的哈希表rehash。
+
+## LSM
+
+写的时候永远是顺序的。读的时候要做多版本检测，并且要做Compaction。
+
 # 一致性hash
 
 ## Rendezvous hashing
@@ -83,6 +105,6 @@ int32_t JumpConsistentHash(uint64_t key, int32_t num_buckets) {
 
 # Reference
 
++ [从HashMap的rehash到分布式KV数据库](https://zhuanlan.zhihu.com/p/50827247)
 + [nikhilgarg28/rendezvous](https://github.com/nikhilgarg28/rendezvous)
-
 + [【翻译/介绍】jump Consistent hash:零内存消耗，均匀，快速，简洁，来自Google的一致性哈希算法](https://blog.helong.info/blog/2015/03/13/jump_consistent_hash/)
