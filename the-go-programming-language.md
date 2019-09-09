@@ -189,8 +189,54 @@ func Parse(input string) (s *Syntax, err error) {
 }
 ```
 
+## 方法
+
+### 方法声明
+
+在函数声明时，在其名字之前放上一个变量，即是一个方法。附加的参数，叫做方法的接收器（receiver）。
+
+方法可以被声明到任意类型（slice、字符串、数值都可以），只要不是一个指针或者一个interface。
+
+```go
+type Path []Point
+func (path Path) Distance() float64 {
+    // ...
+}
+```
+
+### 基于指针对象的方法
+
+其实就是C++模式，非指针模式每次调用方法都是复制一个对象，指针就不复制。无论是调用指针对象方法或者调用非指针对象方法，都可以直接用`.`，编译器会自动补全取地址`&`或者取值`*`操作。
+
+自动补全模式仅限于变量，如果无法取到地址（例如临时变量），就无法调用
+
+```go
+Point{1, 2}.ScaleBy(2)  // compile error: can't take address of Point literal
+```
+
+一般来说，用了指针对象方法，所有方法都用指针，不会混用。
+
+只有类型和对应的指针会出现在接收器声明。如果类型本身是一个指针，会造成歧义，所以直接禁止。
+
+```go
+type P *int
+func (P) f() { /* ... */ }  // compile error: invalid receiver type
+```
+
+`nil`也是一个合法的接收器类型，如果方法允许接收最好在注释内声明
+
+```go
+m := url.Values{"lang": {"en"}} // direct construction
+m.Add("item", "1")
+
+m = nil
+fmt.Println(m.Get("item"))  // ""，但是nil.Get("item")编译错，因为无法判断类型
+m.Add("item", "3")  // panic: assignment to entry in nil map
+```
 
 
+## TODO
 
-range返回值or引用
-变量生命周期
++ range返回值or引用
++ range省略参数
++ 变量生命周期
