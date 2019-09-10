@@ -1,5 +1,88 @@
 # Go语言圣经
 
+## 基础数据类型
+
+### 整型
+
+int和uint，大小相同，可能为32或64bit。
+
+Unicode字符rune类型是和int32等价的类型，通常用于表示一个Unicode码点。
+
+byte也是uint8类型的等价类型，byte类型一般用于强调数值是一个原始的数据而不是一个小的整数。
+
+无符号的整数类型uintptr，没有指定具体的bit大小但是足以容纳指针。
+
+int和int32也是不同的类型，即使int的大小也是32bit，在需要将int当作int32类型的地方需要一个显式的类型转换操作。
+
+有符号整数采用2的补码形式表示。
+
+取模运算符%仅用于整数间的运算。%取模运算符的符号和被取模数的符号总是一致的（a % b，与a一致）。
+
+位运算`&`、`|`、`^`、`&^`（位清空，x &^ y，按y标记位清空x），不区分符号。
+
+算术和逻辑运算的二元操作中必须是相同的类型，类型不会自动提升。向下强制转换，截断行为依赖于具体实现。
+
+### 浮点数
+
+函数math.IsNaN用于测试一个数是否是非数NaN。直接用math.NaN进行比较是有问题的，因为NaN和任何数都是不相等的（在浮点数中，NaN、正无穷大和负无穷大的表示都不是唯一的）。
+
+浮点数相等的比较也要注意精度问题。
+
+### 复数
+
+两种精度的复数类型：complex64和complex128，分别对应float32和float64两种浮点数精度。内置的complex函数用于构建复数，内建的real和imag函数分别返回复数的实部和虚部（传入的实部和虚部大小要相同，如果float32则返回complex64）。
+
+### 布尔值
+
+`&&`的优先级比`||`高
+
+```go
+// 可以不加括号
+if 'a' <= c && c <= 'z' ||
+    'A' <= c && c <= 'Z' ||
+    '0' <= c && c <= '9' {
+    // ...ASCII letter or digit...
+}
+```
+
+布尔值并不会隐式转换为数字值0或1，反之亦然。
+
+### 字符串
+
+一个字符串是一个不可改变的字节序列。内置的`len`函数可以返回一个字符串中的字节数目，索引操作`s[i]`返回第i个字节的字节值（都是以字节为单位，不是码点）。
+
+不变性说明两个字符串共享相同的底层数据的话也是安全的。因此，复制任何长度的字符串，或者取子字符串切片，消耗也很小。
+
+Go语言源文件总是用UTF8编码，并且Go语言的文本字符串也以UTF8编码的方式处理。
+
+一个原生的字符串面值形式是`` `...` ``，把`"`改为` ` `。原生字符串不进行转义，保留换行。
+
+#### Unicode
+
+Unicode码点对应Go语言中的rune整数类型（rune是int32等价类型）。
+
+range循环在处理字符串的时候，会自动隐式解码UTF8字符串（并不是字节遍历）。
+
+```go
+for i, r := range "Hello, 世界" {
+    fmt.Printf("%d\t%q\t%d\n", i, r, r)
+}
+```
+
+转换为`rune`序列进行处理
+
+```go
+s := "プログラム"
+fmt.Printf("% x\n", s) // "e3 83 97 e3 83 ad e3 82 b0 e3 83 a9 e3 83 a0"
+r := []rune(s)
+fmt.Printf("%x\n", r)  // "[30d7 30ed 30b0 30e9 30e0]"
+```
+
+## 复合数据类型
+
+
+
+
 ## 函数
 
 ### 函数声明
@@ -234,9 +317,99 @@ fmt.Println(m.Get("item"))  // ""，但是nil.Get("item")编译错，因为无�
 m.Add("item", "3")  // panic: assignment to entry in nil map
 ```
 
+### 通过嵌入结构体来扩展类型
+
+Go没有继承，是通过组合的方式。事实上就是一个语法上的简写。搜索属性的时候会优先选择自身定义的具名属性和方法，然后再搜索匿名的嵌入结构体（不一定是定义在开头）。
+
+匿名结构体可以有多个，如果搜索过程结果存在二义性，则编译错误。
+
+```go
+type Point struct{ X, Y float64 }
+
+type ColoredPoint struct {
+    Point
+    Color color.RGBA
+}
+
+var cp ColoredPoint
+cp.X = 1
+fmt.Println(cp.Point.X) // "1"
+
+// 相当于编译期自动生成了方法
+func (p ColoredPoint) Distance(q Point) float64 {
+    return p.Point.Distance(q)
+}
+```
+
+匿名字段也可以是指针，多个对象可以共享这个匿名对象
+
+```go
+type ColoredPoint struct {
+    *Point
+    Color color.RGBA
+}
+
+p := ColoredPoint{&Point{1, 1}, red}
+q := ColoredPoint{&Point{5, 4}, blue}
+q.Point = p.Point
+p.ScaleBy(2)
+fmt.Println(*p.Point, *q.Point) // "{2 2} {2 2}"
+```
+
+使用匿名结构体的例子
+
+```go
+var cache = struct {
+    sync.Mutex
+    mapping map[string]string
+}{
+    mapping: make(map[string]string),
+}
+
+func Lookup(key string) string {
+    cache.Lock()
+    v := cache.mapping[key]
+    cache.Unlock()
+    return v
+}
+```
+
+### 方法值和方法表达式
+
+这就相当于Python的bound method和unbound method。
+
+```go
+p := Point{1, 2}
+q := Point{4, 6}
+
+distanceFromP := p.Distance        // method value
+fmt.Println(distanceFromP(q))      // "5"
+
+type Rocket struct { /* ... */ }
+func (r *Rocket) Launch() { /* ... */ }
+r := new(Rocket)
+time.AfterFunc(10 * time.Second, r.Launch)  // 直接用bound method
+
+// unbound method，接收器变成第一个参数
+distance := Point.Distance   // method expression
+fmt.Println(distance(p, q))  // "5"
+fmt.Printf("%T\n", distance) // "func(Point, Point) float64"
+```
+
+### 封装
+
+
+
 
 ## TODO
 
 + range返回值or引用
 + range省略参数
 + 变量生命周期
+
++ 3.6常量
++ 6.6封装
+
++ for range修改map
+
+The iteration order over maps is not specified and is not guaranteed to be the same from one iteration to the next. If map entries that have not yet been reached are removed during iteration, the corresponding iteration values will not be produced. If map entries are created during iteration, that entry may be produced during the iteration or may be skipped. The choice may vary for each entry created and from one iteration to the next. If the map is nil, the number of iterations is 0.
