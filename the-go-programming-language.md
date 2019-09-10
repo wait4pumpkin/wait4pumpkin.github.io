@@ -1,5 +1,19 @@
 # Go语言圣经
 
+## 程序结构
+
+### 命名
+
+关键字不能用于自定义名字，只能在特定语法结构中使用。内部预先定义的名字并不是关键字（包括builtin常量、类型、函数），可以再定义。
+
+名字的开头字母的大小写决定了名字在包外的可见性。如果一个名字是大写字母开头的（必须是在函数外部定义的包级名字；包级函数名本身也是包级名字），那么它将是导出的，也就是说可以被外部的包访问。
+
+驼峰命名，缩写使用全大写（ASCII、HTML）。
+
+### 声明
+
+
+
 ## 基础数据类型
 
 ### 整型
@@ -80,8 +94,172 @@ fmt.Printf("%x\n", r)  // "[30d7 30ed 30b0 30e9 30e0]"
 
 ## 复合数据类型
 
+### 数组
 
+数组长度是固定的，和slice的区别。默认进行初始化。
 
+```go
+// … 根据初值推导size
+q := […]int{1, 2, 3}
+```
+
+长度是类型的一部分，长度不同就是不同类型。数组可以直接进行比较。
+
+字面量初始化中，初始化索引的顺序不重要。未指定初始值的元素将用零值初始化。
+
+```go
+r := [...]int{99: -1}  // 大小是100
+```
+
+数组本身是值类型，指针要显示写出
+
+```go
+func zero(ptr *[32]byte) {
+    *ptr = [32]byte{}
+}
+```
+
+### Slice
+
+没有固定长度的数组，相当于数组的引用。
+
+```go
+s := []int{0, 1, 2, 3, 4, 5}  // 区别在于没有长度
+```
+
+一个slice由三个部分构成：指针、长度和容量。内置的len和cap函数分别返回slice的长度和容量。指针指向slice第一个起始元素（不是数组），长度是slice元素数量，容量是slice开始位置到数组结尾的长度。
+
+slice可以共享底层数据，引用区域可以重叠。
+
+slice的切片操作`s[i:j]`，j可以大于`len(s)`扩大slice范围（不能超过cap(s)），索引范围必须在`len(s)`内。
+
+slice不能直接用`==`比较（可以与`nil`比较）。不支持是因为slice可以引用自身，若只做引用相等检测，就会和数组行为不一致，所以直接禁止。
+
+除了文档已经明确说明的地方，所有的Go语言函数应该以相同的方式对待nil值的slice和0长度的slice。
+
+```go
+var s []int    // len(s) == 0, s == nil
+s = nil        // len(s) == 0, s == nil
+s = []int(nil) // len(s) == 0, s == nil
+s = []int{}    // len(s) == 0, s != nil
+```
+
+用`make`构造slice
+
+```go
+make([]T, len)
+make([]T, len, cap) // same as make([]T, cap)[:len]
+```
+
+#### append函数
+
+`append`可以往slice追加元素（多个或者slice），底层有可能重新分配内存空间，所以要用返回值重新赋值。
+
+```go
+var x []int
+x = append(x, 4, 5, 6)
+x = append(x, x...)  // append the slice x
+
+runes = append(runes, r)
+```
+
+#### Slice内存技巧
+
+利用slice共享内存的特性，避免内存分配
+
+```go
+func nonempty(strings []string) []string {
+    i := 0
+    for _, s := range strings {
+        if s != "" {
+            strings[i] = s
+            i++
+        }
+    }
+    return strings[:i]
+}
+
+func nonempty2(strings []string) []string {
+    out := strings[:0]  // zero-length slice of original
+    for _, s := range strings {
+        if s != "" {
+            out = append(out, s)
+        }
+    }
+    return out
+}
+
+data := []string{"one", "", "three"}
+data = nonempty(data)
+```
+
+模拟栈
+
+```go
+stack = append(stack, v)  // push v
+top := stack[len(stack)-1]  // top of stack
+stack = stack[:len(stack)-1]  // pop
+```
+
+删除元素（保持顺序）
+
+```go
+func remove(slice []int, i int) []int {
+    copy(slice[i:], slice[i+1:])
+    return slice[:len(slice)-1]
+}
+
+func main() {
+    s := []int{5, 6, 7, 8, 9}
+    fmt.Println(remove(s, 2)) // "[5 6 8 9]"
+}
+```
+
+`swap`删除
+
+```go
+func remove(slice []int, i int) []int {
+    slice[i] = slice[len(slice)-1]
+    return slice[:len(slice)-1]
+}
+
+func main() {
+    s := []int{5, 6, 7, 8, 9}
+    fmt.Println(remove(s, 2)) // "[5 6 9 8]
+}
+```
+
+### Map
+
+key要支持`==`操作。可以用`make`创建或者字面量初始化。
+
+```go
+ages := make(map[string]int)
+ages := map[string]int{}
+```
+
+即使元素不存在操作也是安全的。用下标访问不存在的key返回value的零值。
+
+```go
+ages["alice"] = 32
+delete(ages, "alice")
+```
+
+如果要检测是否存在
+
+```go
+if age, ok := ages["bob"]; !ok { /* ... */ }
+```
+
+元素被禁止取址，因为内存可能会重分配（如果有这种需求应该存指针）。
+
+```go
+_ = &ages["bob"]  // compile error: cannot take address of map element
+```
+
+迭代顺序是随机的。map上的大部分操作，包括查找、删除、len和range循环都可以安全工作在nil值的map上，它们的行为和一个空的map类似（除了存入元素会panic）。
+
+map也不能进行`==`比较，自行实现时要留意存在的时候才能用下标取值进行比较。
 
 ## 函数
 
@@ -407,8 +585,9 @@ fmt.Printf("%T\n", distance) // "func(Point, Point) float64"
 + range省略参数
 + 变量生命周期
 
-+ 3.6常量
-+ 6.6封装
++ 3.6 常量
++ 4.4 结构体
++ 6.6 封装
 
 + for range修改map
 
