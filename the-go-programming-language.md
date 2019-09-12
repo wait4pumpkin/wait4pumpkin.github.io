@@ -12,7 +12,7 @@
 
 ### 声明
 
-
+有四种类型的声明语句：`var`、`const`、`type`和`func`。
 
 ## 基础数据类型
 
@@ -467,7 +467,7 @@ func (path Path) Distance() float64 {
 
 ### 基于指针对象的方法
 
-其实就是C++模式，非指针模式每次调用方法都是复制一个对象，指针就不复制。无论是调用指针对象方法或者调用非指针对象方法，都可以直接用`.`，编译器会自动补全取地址`&`或者取值`*`操作。
+其实就是C++模式，非指针模式每次调用方法都是复制一个对象，指针就不复制。无论是调用指针对象方法或者调用非指针对象方法，都可以直接用`.`，编译器会自动补全取地址`&`或者取值`*`操作（前提是必须是一个变量）。
 
 自动补全模式仅限于变量，如果无法取到地址（例如临时变量），就无法调用
 
@@ -576,6 +576,469 @@ fmt.Printf("%T\n", distance) // "func(Point, Point) float64"
 
 ### 封装
 
+## 接口
+
+接口是隐式实现的（描述方法集合），只要实现了接口约定的方法就是实现了该接口，不需要显式声明。
+
+```go
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+func Fprintf(w io.Writer, format string, args ...interface{}) (int, error)
+func Printf(format string, args ...interface{}) (int, error) {
+    return Fprintf(os.Stdout, format, args...)
+}
+func Sprintf(format string, args ...interface{}) string {
+    var buf bytes.Buffer
+    Fprintf(&buf, format, args...)
+    return buf.String()
+}
+```
+
+### 接口类型
+
+接口可以通过组合内嵌
+
+```go
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+type Closer interface {
+    Close() error
+}
+type ReadWriteCloser interface {
+    Reader
+    Writer
+    Closer
+}
+```
+
+### 实现接口的条件
+
+要留意方法是定义在对象还是对象指针上。
+
+```go
+// String定义在对象指针上
+var _ fmt.Stringer = &s  // OK
+var _ fmt.Stringer = s   // compile error: IntSet lacks String method
+```
+
+`interface{}`空接口，可以接收任意类型（但无法进行任何操作）。
+
+### 接口值
+
+接口值可以使用＝＝和！＝来进行比较。两个接口值相等仅当它们都是nil值或者它们的动态类型相同并且动态值也根据这个动态类型的＝＝操作相等。但是，如果动态类型相同，但类型本身不支持比较，就会panic。
+
+```go
+var x interface{} = []int{1, 2, 3}
+fmt.Println(x == x)  // panic: comparing uncomparable type []int
+```
+
+可以包接口抽象为两个指针，分别指向类型和值。特别要说明的是，包含`nil`的接口和`nil`接口是不同的。因为包含`nil`的接口，类型是接口，而`nil`类型空，类型不同就不同，并没有判断值。
+
+```go
+func main() {
+    var buf *bytes.Buffer
+    f(buf)  // NOTE: subtly incorrect!
+}
+
+// If out is non-nil, output will be written to it.
+func f(out io.Writer) {
+    if out != nil {
+        out.Write([]byte("done!\n"))  // Panic
+    }
+}
+```
+
+### 类型断言
+
+类型断言`x.(T)`，是对接口的操作，把接口转换为具体类型或者另一个接口。`nil`无论什么断言都会失败。
+
+```go
+var w io.Writer
+w = os.Stdout
+f := w.(*os.File)      // success: f == os.Stdout
+c := w.(*bytes.Buffer) // panic: interface holds *os.File, not *bytes.Buffer
+```
+
+如果不希望panic
+
+```go
+if f, ok := w.(*os.File); ok {
+    // ...use f...
+}
+```
+
+### 类型分支
+
+type switch，`.(type)`只能用于`switch`
+
+```go
+switch x.(type) {
+    case nil:       // ...
+    case int, uint: // ...
+    case bool:      // ...
+    case string:    // ...
+    default:        // ...
+}
+```
+
+## Goroutines和Channels
+
+### Goroutines
+
+当一个程序启动时，其主函数即在一个单独的goroutine中运行（main goroutine）。新的goroutine会用go语句来创建。除了从主函数退出或者直接终止程序之外，没有其它的编程方法能够让一个goroutine来打断另一个的执行。
+
+### Channels
+
+一个goroutine通过channel给另一个goroutine发送值信息。每个channel都有一个特殊的类型，也就是channels可发送数据的类型。
+
+构造
+
+```go
+ch := make(chan int) // ch has type 'chan int'
+```
+
+和map类似，channel也对应一个make创建的底层数据结构的引用。当我们复制一个channel或用于函数参数传递时，我们只是拷贝了一个channel引用，因此调用者和被调用者将引用同一个channel对象。两个相同类型的channel可以使用==运算符比较。如果两个channel引用的是相同的对象，那么比较的结果为真。
+
+发送和接收两个操作都使用`<-`运算符。一个不使用接收结果的接收操作也是合法的。
+
+```go
+ch <- x  // a send statement
+x = <-ch // a receive expression in an assignment statement
+<-ch     // a receive statement; result is discarded
+```
+
+Channel支持close操作，随后对基于该channel的任何发送操作都会panic。对一个已经被close过的channel进行接收操作依然可以接受到之前已经成功发送的数据；如果channel中已经没有数据的话将产生一个零值的数据。
+
+```go
+close(ch)
+```
+
+默认构造的channel是无缓存，可以指定缓存容量
+
+```go
+ch = make(chan int)    // unbuffered channel
+ch = make(chan int, 0) // unbuffered channel
+ch = make(chan int, 3) // buffered channel with capacity 3
+```
+
+### 不带缓存的Channels
+
+一个基于无缓存Channels的发送操作将导致发送者goroutine阻塞，直到另一个goroutine在相同的Channels上执行接收操作。反之，如果接收操作先发生，那么接收者goroutine也将阻塞，直到有另一个goroutine在相同的Channels上执行发送操作。
+
+### 串联的Channels（Pipeline）
+
+判断channel是否关闭
+
+```go
+x, ok := <-naturals
+```
+
+用`range`，在channel关闭且没有数据时就会跳出
+
+```go
+for x := range naturals {
+    squares <- x * x
+}
+```
+
+只有当需要告诉接收者goroutine，所有的数据已经全部发送时才需要关闭channel。不管一个channel是否被关闭，当它没有被引用时将会被Go语言的垃圾自动回收器回收。
+
+### 单方向的Channel
+
+类型`chan<- int`表示一个只发送int的channel，只能发送不能接收。类型`<-chan int`表示一个只接收int的channel，只能接收不能发送。
+
+因为关闭操作只用于断言不再向channel发送新的数据，所以只有在发送者所在的goroutine才会调用close函数。对一个只接收的channel调用close会编译错误。
+
+任何双向channel向单向channel变量的赋值操作都将导致该隐式转换。不支持反向转换。
+
+### 带缓存的Channels
+
+如果内部缓存队列是满的，那么发送操作将阻塞直到因另一个goroutine执行接收操作而释放了新的队列空间。如果channel是空的，接收操作将阻塞直到有另一个goroutine执行发送操作而向队列插入元素。
+
+`cap`和`len`可以获取channel的容量和有效元素个数。
+
+如果goroutine阻塞在channel发送，而一直没有goroutine从channel接收，发送的goroutine就会泄露。和垃圾变量不同，泄漏的goroutines并不会被自动回收，因此确保每个不再需要的goroutine能正常退出是重要的。
+
+```go
+func mirroredQuery() string {
+    responses := make(chan string, 3)  // 如果使用无缓冲，就会造成泄露
+    go func() { responses <- request("asia.gopl.io") }()
+    go func() { responses <- request("europe.gopl.io") }()
+    go func() { responses <- request("americas.gopl.io") }()
+    return <-responses // return the quickest response
+}
+```
+
+### 并发的循环
+
+用goroutine实现循环的并发
+
+```go
+func makeThumbnails3(filenames []string) {
+    ch := make(chan struct{})
+    for _, f := range filenames {
+        go func(f string) {
+            thumbnail.ImageFile(f) // NOTE: ignoring errors
+            ch <- struct{}{}
+        }(f)
+        // f是复制了一份，如果直接capture是错误的
+        // go func() {
+        //     thumbnail.ImageFile(f) // NOTE: incorrect!
+        //     // ...
+        // }()
+    }
+    // Wait for goroutines to complete.
+    for range filenames {
+        <-ch
+    }
+}
+```
+
+如果考虑错误处理
+
+```go
+func makeThumbnails4(filenames []string) error {
+    errors := make(chan error)
+
+    for _, f := range filenames {
+        go func(f string) {
+            _, err := thumbnail.ImageFile(f)
+            errors <- err
+        }(f)
+    }
+
+    for range filenames {
+        // 潜在问题，出错return时，发送的goroutine泄露。简单的解决方案是channel建立足够大的缓冲区，又或者多起一个goroutine负责消耗完channel内容
+        if err := <-errors; err != nil {
+            return err // NOTE: incorrect: goroutine leak!
+        }
+    }
+
+    return nil
+}
+```
+
+通过`sync.WaitGroup`等待完成
+
+```go
+func makeThumbnails6(filenames <-chan string) int64 {
+    sizes := make(chan int64)
+    var wg sync.WaitGroup // number of working goroutines
+    for f := range filenames {
+        wg.Add(1) // 要在goroutine外，否则closer可能就直接结束了
+        // worker
+        go func(f string) {
+            defer wg.Done() // 保证一定-1
+            thumb, err := thumbnail.ImageFile(f)
+            if err != nil {
+                log.Println(err)
+                return
+            }
+            info, _ := os.Stat(thumb) // OK to ignore error
+            sizes <- info.Size()
+        }(f)
+    }
+
+    // closer
+    go func() {
+        wg.Wait()
+        close(sizes) // close的时候不会再有发送
+    }()
+
+    var total int64
+    for size := range sizes {
+        total += size
+    }
+    return total
+}
+```
+
+### 示例: 并发的Web爬虫
+
+```go
+func main() {
+    worklist := make(chan []string)
+
+    // Start with the command-line arguments.
+    go func() { worklist <- os.Args[1:] }()
+
+    // Crawl the web concurrently.
+    seen := make(map[string]bool)
+    for list := range worklist {
+        for _, link := range list {
+            if !seen[link] {
+                seen[link] = true
+                // 开一个goroutine是为了避免没有读操作而一直阻塞
+                go func(link string) {
+                    worklist <- crawl(link)
+                }(link)
+                // link要复制，不能直接capture
+            }
+        }
+    }
+}
+```
+
+通过buffered channel限制并发上限
+
+```go
+// 令牌限制
+var tokens = make(chan struct{}, 20)
+
+func crawl(url string) []string {
+    tokens <- struct{}{} // acquire a token
+    list, err := links.Extract(url)
+    <-tokens // release the token
+    if err != nil {
+        log.Print(err)
+    }
+    return list
+}
+```
+
+为了能让程序正常退出，记录要获取的链接数
+
+```go
+func main() {
+    worklist := make(chan []string)
+    var n int // number of pending sends to worklist
+
+    // Start with the command-line arguments.
+    n++
+    go func() { worklist <- os.Args[1:] }()
+
+    // Crawl the web concurrently.
+    seen := make(map[string]bool)
+
+    for ; n > 0; n-- {
+        list := <-worklist
+        for _, link := range list {
+            if !seen[link] {
+                seen[link] = true
+                n++
+                go func(link string) {
+                    worklist <- crawl(link)
+                }(link)
+            }
+        }
+    }
+}
+```
+
+又或者通过常驻的goroutine限制并发
+
+```go
+func main() {
+    worklist := make(chan []string)  // lists of URLs, may have duplicates
+    unseenLinks := make(chan string) // de-duplicated URLs
+
+    // Add command-line arguments to worklist.
+    go func() { worklist <- os.Args[1:] }()
+
+    // Create 20 crawler goroutines to fetch each unseen link.
+    for i := 0; i < 20; i++ {
+        go func() {
+            for link := range unseenLinks {
+                foundLinks := crawl(link)
+                go func() { worklist <- foundLinks }()
+            }
+        }()
+    }
+
+    // The main goroutine de-duplicates worklist items
+    // and sends the unseen ones to the crawlers.
+    seen := make(map[string]bool)
+    for list := range worklist {
+        for _, link := range list {
+            if !seen[link] {
+                seen[link] = true
+                unseenLinks <- link
+            }
+        }
+    }
+}
+```
+
+### 基于select的多路复用
+
+每一个case代表一个通信操作(在某个channel上进行发送或者接收)并且会包含一些语句组成的一个语句块。select会有一个default来设置当其它的操作都不能够马上被处理时程序需要执行哪些逻辑（相当于非阻塞）。
+
+```go
+select {
+case <-ch1:
+    // ...
+case x := <-ch2:
+    // ...use x...
+case ch3 <- y:
+    // ...
+default:
+    // ...
+}
+```
+
+一个没有任何case的select语句写作select{}，会永远地等待下去。如果多个case同时就绪时，select会随机地选择一个执行，这样来保证每一个channel都有平等的被select的机会。
+
+```go
+// 如果增大buffer，执行就是随机的
+ch := make(chan int, 1)
+for i := 0; i < 10; i++ {
+    select {
+    case x := <-ch:
+        fmt.Println(x) // "0" "2" "4" "6" "8"
+    case ch <- i:
+    }
+}
+```
+
+channel的零值是nil。因为对一个nil的channel发送和接收操作会永远阻塞，在select语句中操作nil的channel永远都不会被select到。
+
+### 并发的退出
+
+用channel进行广播，退出之前要保证某些必要的channel被清空，避免其他goroutine一直阻塞导致泄露。
+
+```go
+var done = make(chan struct{})
+
+func cancelled() bool {
+    select {
+    case <-done:
+        return true
+    default:
+        return false
+    }
+}
+```
+
+## 基于共享变量的并发
+
+尽量不要使用共享数据来通信，使用通信来共享数据（channel）。
+
+### sync.Mutex互斥锁
+
+go里没有重入锁
+
+### sync.RWMutex读写锁
+
+```go
+var mu sync.RWMutex
+var balance int
+func Balance() int {
+    mu.RLock() // readers lock
+    defer mu.RUnlock()
+    return balance
+}
+```
+
+
+
+## 反射
+
+### 为何需要反射?
+
+
 
 
 
@@ -584,11 +1047,26 @@ fmt.Printf("%T\n", distance) // "func(Point, Point) float64"
 + range返回值or引用
 + range省略参数
 + 变量生命周期
++ 反射实现
++ 接口实现（多态）
++ nil的比较，nil的类型
 
 + 3.6 常量
 + 4.4 结构体
 + 6.6 封装
 
 + for range修改map
++ 没有重载
++ 类型断言消耗
++ goroutine并发数、调度，什么时候会让出
++ channel阻塞怎么调度唤醒
++ channel怎么保证并发安全
++ channel显式close or 等待gc
++ 有没有引用计数
++ empty struct大小
++ 线程安全容器
++ Mutex和channel消耗对比
+
+http://marcio.io/2015/07/handling-1-million-requests-per-minute-with-golang/
 
 The iteration order over maps is not specified and is not guaranteed to be the same from one iteration to the next. If map entries that have not yet been reached are removed during iteration, the corresponding iteration values will not be produced. If map entries are created during iteration, that entry may be produced during the iteration or may be skipped. The choice may vary for each entry created and from one iteration to the next. If the map is nil, the number of iterations is 0.
