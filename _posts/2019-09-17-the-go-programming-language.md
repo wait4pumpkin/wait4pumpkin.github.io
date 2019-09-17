@@ -1,4 +1,10 @@
-# Go语言圣经
+---
+layout: post
+title: "The Go Programming Language"
+categories: go
+tags:
+  - notes
+---
 
 ## 程序结构
 
@@ -69,7 +75,7 @@ if 'a' <= c && c <= 'z' ||
 
 Go语言源文件总是用UTF8编码，并且Go语言的文本字符串也以UTF8编码的方式处理。
 
-一个原生的字符串面值形式是`` `...` ``，把`"`改为` ` `。原生字符串不进行转义，保留换行。
+一个原生的字符串面值形式是`` `...` ``，把`"`改为`` ` ``。原生字符串不进行转义，保留换行。
 
 #### Unicode
 
@@ -1039,8 +1045,49 @@ func Balance() int {
 ### 为何需要反射?
 
 
+## 底层编程
 
+### unsafe.Sizeof, Alignof 和 Offsetof
 
+基本功能和C++接近
+
+unsafe.Sizeof函数返回操作数在内存中的字节大小，参数可以是任意类型的表达式，但是它并不会对表达式进行求值。
+
++ bool：1个字节
++ int, uint, uintptr：1个机器字
++ *T：1个机器字
++ string：2个机器字（data、len）
++ []T：3个机器字（data、len、cap）
++ map：1个机器字
++ func：1个机器字
++ chan：1个机器字
++ interface：2个机器字（type、value）
+
+Go语言的规范并没有要求一个字段的声明顺序和内存中的顺序是一致的，所以理论上一个编译器可以随意地重新排列每个字段的内存位置，但目前实现并没有这么做。
+
+这几个方法调用事实上是安全的
+
+### unsafe.Pointer
+
+unsafe.Pointer是特别定义的一种指针类型（类似`void *`），它可以包含任意类型变量的地址。我们不可以直接通过`*p`来取值，因为缺失具体类型。unsafe.Pointer指针可以比较，并且支持和nil常量比较判断是否为空指针。
+
+普通的`*T`类型指针可以与unsafe.Pointer类型指针互相转换，且被转回普通的指针类型并不需要和原始的`*T`类型相同。
+
+unsafe.Pointer指针可以被转化为uintptr类型，然后进行指针运算。
+
+```go
+var x struct {
+    a bool
+    b int16
+    c []int
+}
+
+// 和 pb := &x.b 等价
+pb := (*int16)(unsafe.Pointer(
+    uintptr(unsafe.Pointer(&x)) + unsafe.Offsetof(x.b)))
+*pb = 42
+fmt.Println(x.b) // "42"
+```
 
 ## TODO
 
@@ -1050,6 +1097,7 @@ func Balance() int {
 + 反射实现
 + 接口实现（多态）
 + nil的比较，nil的类型
++ gc什么时候执行，一个语句内可能执行gc吗
 
 + 3.6 常量
 + 4.4 结构体
