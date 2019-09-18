@@ -1038,6 +1038,56 @@ func Balance() int {
 }
 ```
 
+## 包和工具
+
+包禁止循环依赖，每个包是由一个全局唯一的字符串所标识的导入路径定位。
+
+### 包声明
+
+在每个Go语言源文件的开头都必须有包声明语句。
+
+通常来说，默认的包名就是包导入路径名的最后一段（只是一般的约定，包名和路径事实上是独立的）。`math/rand`包和`crypto/rand`包的包名都是rand。一些依赖版本号的管理工具会在导入路径后追加版本号信息，例如`gopkg.in/yaml.v2`，这种情况下包名是`yaml`。
+
+### 导入声明
+
+```go
+// 包重命名解决冲突，只影响当前文件
+import (
+    "crypto/rand"
+    mrand "math/rand" // alternative name mrand avoids conflict
+)
+```
+
+### 包的匿名导入
+
+只想利用导入包而产生的副作用（包级变量的初始化表达式和执行导入包的init初始化函数），而不希望产生编译错。
+
+```go
+import _ "image/png" // register PNG decoder
+```
+
+### 包和命名
+
+因为包名和函数名总是组合使用，所以函数名不需要重复包名的内容。例如，`bytes.Equal`，`flag.Int`，`http.Get`，`json.Marshal`。
+
+### 工具
+
+#### 工作区结构
+
+
+
+
+
+## 测试
+
+### go test
+
+在包目录内，所有以_test.go为后缀名的源文件在执行go build时不会被构建成包的一部分，它们是go test测试的一部分。在*_test.go文件中，有三种类型的函数：测试函数（Test函数前缀）、基准测试函数（Benchmark）、示例函数（Example）。
+
+### 测试函数
+
+
+
 
 
 ## 反射
@@ -1082,12 +1132,30 @@ var x struct {
     c []int
 }
 
-// 和 pb := &x.b 等价
+// 和 pb := &x.b 等价，没有临时变量
 pb := (*int16)(unsafe.Pointer(
     uintptr(unsafe.Pointer(&x)) + unsafe.Offsetof(x.b)))
 *pb = 42
 fmt.Println(x.b) // "42"
 ```
+
+GC可能会移动变量（或者栈扩容），变量移动后，`unsafe.Pointer`同样会被更新，但`uintptr`是简单的数值类型，不会更新，因而会出错。
+
+```go
+// 增加了临时变量，可能出错
+tmp := uintptr(unsafe.Pointer(&x)) + unsafe.Offsetof(x.b)
+pb := (*int16)(unsafe.Pointer(tmp))
+*pb = 42
+```
+
+```go
+// 执行完之后GC就可以把对象回收，引用的是非法地址
+pT := uintptr(unsafe.Pointer(new(T))) // 提示: 错误!
+```
+
+将所有包含变量地址的uintptr类型变量当作BUG处理，同时减少不必要的unsafe.Pointer类型到uintptr类型的转换（要转换的话在一个表达式内完成）。
+
+当调用一个库函数，并且返回的是uintptr类型地址时，返回的结果应该立即转换为unsafe.Pointer以确保指针指向的是相同的变量。
 
 ## TODO
 
@@ -1098,6 +1166,8 @@ fmt.Println(x.b) // "42"
 + 接口实现（多态）
 + nil的比较，nil的类型
 + gc什么时候执行，一个语句内可能执行gc吗
++ 一个语句是否会被打断（中间执行其他代码）
++ 是否是移动GC
 
 + 3.6 常量
 + 4.4 结构体
@@ -1114,7 +1184,22 @@ fmt.Println(x.b) // "42"
 + empty struct大小
 + 线程安全容器
 + Mutex和channel消耗对比
++ go调用c及消耗，如果实现数据安全
++ go库搜索顺序
 
 http://marcio.io/2015/07/handling-1-million-requests-per-minute-with-golang/
 
 The iteration order over maps is not specified and is not guaranteed to be the same from one iteration to the next. If map entries that have not yet been reached are removed during iteration, the corresponding iteration values will not be produced. If map entries are created during iteration, that entry may be produced during the iteration or may be skipped. The choice may vary for each entry created and from one iteration to the next. If the map is nil, the number of iterations is 0.
+
++ 1
++ 2
++ 3
++ 4
++ 5
++ 6
++ 7
++ 8
++ 9
++ 10
++ 11
++ 12
