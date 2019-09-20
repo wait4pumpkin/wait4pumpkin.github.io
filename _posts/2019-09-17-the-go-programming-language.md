@@ -20,6 +20,146 @@ tags:
 
 有四种类型的声明语句：`var`、`const`、`type`和`func`。
 
+在包一级声明语句声明的名字可在整个包对应的每个源文件中访问，而不是仅仅在其声明语句所在的源文件中访问。
+
+### 变量
+
+默认都是零值初始化。
+
+#### 简短变量声明
+
+`:=`是一个变量声明语句，`=`是一个变量赋值操作。
+
+简短变量声明左边的变量可能并不是全部都是刚刚声明的（但必定有一个是新声明的）。如果有一些已经在相同的词法域（一定要相同）声明过了，那么简短变量声明语句对这些已经声明过的变量就只有赋值行为了。
+
+简短变量声明语句只有对已经在同级词法域声明过的变量才和赋值操作语句等价，如果变量是在外部词法域声明的，那么简短变量声明语句将会在当前词法域重新声明一个新的变量。
+
+#### 指针
+
+一个变量对应一个保存了变量对应类型值的内存空间。所有这些表达式一般都是读取一个变量的值，除非它们是出现在赋值语句的左边，这种时候是给对应变量赋予一个新的值。
+
+一个指针的值是另一个变量的地址。一个指针对应变量在内存中的存储位置。并不是每一个值都会有一个内存地址，但是对于每一个变量必然有对应的内存地址。
+
+返回函数中局部变量的地址也是安全的。
+
+#### new函数
+
+`new(T)`创建一个T类型的匿名变量，初始化为T类型的零值，然后返回变量地址，返回的指针类型为`*T`。
+
+每次调用new函数都是返回一个新的变量的地址，但是大小为0的类型可能地址相同（标准允许，但不一定）。
+
+#### 变量的生命周期
+
+对于在包一级声明的变量来说，它们的生命周期和整个程序的运行周期是一致的。
+
+基本的实现思路是，从每个包级的变量和每个当前运行函数的每一个局部变量开始，通过指针或引用的访问路径遍历，是否可以找到该变量。如果不存在这样的访问路径，那么说明该变量是不可达的。一个循环迭代内部的局部变量的生命周期可能超出其局部作用域，局部变量也可能在函数返回之后依然存在。
+
+编译器会自动选择在栈上还是在堆上分配局部变量的存储空间，但并不是通过`var`或者`new`声明变量的方式决定的，编译期会通过变量逃逸分析决定。
+
+### 赋值
+
+自增和自减是语句，而不是表达式，因此`x = i++`之类的表达式是错误的。
+
+### 元组赋值
+
+在赋值之前，赋值语句右边的所有表达式将会先进行求值，然后再统一更新左边对应变量的值。
+
+```go
+x, y = y, x
+a[i], a[j] = a[j], a[i]
+```
+
+### 类型
+
+```go
+// 虽然底层类型相同，但是他们是不同数据类型，也不能直接比较
+type Celsius float64    // 摄氏温度
+type Fahrenheit float64 // 华氏温度
+```
+
+`T(x)`可以做类型转换，只有底层类型相同时才允许（相同布局的struct也可以转换），只改变类型，不影响值，同时转换出错只会出现在编译期。
+
+### 包和文件
+
+goimports导入工具，它可以根据需要自动添加或删除导入的包。
+
+#### 包的初始化
+
+包的初始化首先是解决包级变量的依赖顺序，然后按照包级变量声明出现的顺序依次初始化
+
+```go
+var a = b + c // a 第三个初始化, 为 3
+var b = f()   // b 第二个初始化, 为 2, 通过调用 f (依赖c)
+var c = 1     // c 第一个初始化, 为 1
+
+func f() int { return c + 1 }
+```
+
+如果包中含有多个.go源文件，它们将按照发给编译器的顺序进行初始化（默认是按文件名排序）。
+
+每个文件都可以包含多个init初始化函数，这样的init初始化函数除了不能被调用或引用外，其他行为和普通函数类似。在每个文件中的init初始化函数，在程序开始执行时按照它们声明的顺序被自动调用。
+
+每个包在解决依赖的前提下，以导入声明的顺序初始化，每个包只会被初始化一次。
+
+### 作用域
+
+不要将作用域和生命周期混为一谈。声明语句的作用域对应的是一个源代码的文本区域；它是一个编译时的属性。一个变量的生命周期是指程序运行时变量存在的有效时间段，在此时间区域内它可以被程序的其他部分引用，一个运行时的概念。
+
+句法块是由花括弧所包含的一系列语句。句法块内部声明的名字是无法被外部块访问的。这个块决定了内部声明的名字的作用域范围。
+
+对全局的源代码来说，存在一个整体的词法块，称为全局词法块；对于每个包；每个for、if和switch语句，也都对应词法块；每个switch或select的分支也有独立的语法块；当然也包括显式书写的词法块（花括弧包含的语句）。
+
+对于内置的类型、函数和常量，比如int、len和true等是在全局作用域的，因此可以在整个程序中直接使用。任何在在函数外部（也就是包级语法域）声明的名字可以在同一个包的任何源文件中访问的。对于导入的包，例如tempconv导入的fmt包，则是对应源文件级的作用域，因此只能在当前的文件中访问导入的fmt包，当前包的其它源文件无法访问在当前源文件导入的包。
+
+控制流标号，就是break、continue或goto语句后面跟着的那种标号，则是函数级的作用域。
+
+当编译器遇到一个名字引用时，如果它看起来像一个声明，它首先从最内层的词法域向全局的作用域查找。如果查找失败，则报告“未声明的名字”这样的错误。如果该名字在内部和外部的块分别声明过，则内部块的声明首先被找到。在这种情况下，内部声明屏蔽了外部同名的声明，让外部的声明的名字无法被访问。
+
+并不是所有的词法域都显式地对应到由花括弧包含的语句；还有一些隐含的规则。for语句创建了两个词法域：花括弧包含的是显式的部分是for的循环体部分词法域，另外一个隐式的部分则是循环的初始化部分，比如用于迭代变量i的初始化。隐式的词法域部分的作用域还包含条件测试部分和循环后的迭代部分（i++），当然也包含循环体词法域。
+
+```go
+func main() {
+    x := "hello"
+    for _, x := range x {
+        x := x + 'A' - 'a'
+        fmt.Printf("%c", x) // "HELLO" (one letter per iteration)
+    }
+}
+```
+
+if和switch语句也会在条件部分创建隐式词法域，还有它们对应的执行体词法域。
+
+```go
+if x := f(); x == 0 {
+    fmt.Println(x)
+} else if y := g(x); x == y {
+    fmt.Println(x, y)
+} else {
+    fmt.Println(x, y)
+}
+fmt.Println(x, y) // compile error: x and y are not visible here
+```
+
+switch语句的每个分支也有类似的词法域规则：条件部分为一个隐式词法域，然后每个是每个分支的词法域。
+
+在包级别，声明的顺序并不会影响作用域范围，因此一个先声明的可以引用它自身或者是引用后面的一个声明，这可以让我们定义一些相互嵌套或递归的类型或函数。但是如果一个变量或常量递归引用了自身，则会产生编译错误。
+
+要特别注意短变量声明语句的作用域范围
+
+```go
+var cwd string
+
+func init() {
+    // 声明了一个新的，因为不属于同一个作用域
+    cwd, err := os.Getwd() // NOTE: wrong!
+    if err != nil {
+        log.Fatalf("os.Getwd failed: %v", err)
+    }
+    log.Printf("Working directory = %s", cwd)
+}
+```
+
+
 ## 基础数据类型
 
 ### 整型
@@ -97,6 +237,16 @@ fmt.Printf("% x\n", s) // "e3 83 97 e3 83 ad e3 82 b0 e3 83 a9 e3 83 a0"
 r := []rune(s)
 fmt.Printf("%x\n", r)  // "[30d7 30ed 30b0 30e9 30e0]"
 ```
+
+### 常量
+
+常量表达式的值在编译期计算，每种常量的潜在类型都是基础类型：boolean、string或数字。
+
+常量间的所有算术运算、逻辑运算和比较运算的结果也是常量，对常量的类型转换操作或以下函数调用都是返回常量结果：len、cap、real、imag、complex和unsafe.Sizeof。
+
+
+
+
 
 ## 复合数据类型
 
@@ -1074,8 +1224,91 @@ import _ "image/png" // register PNG decoder
 
 #### 工作区结构
 
+GOPATH环境变量，用来指定当前工作目录。GOPATH对应的工作区目录有三个子目录：src存储源代码，pkg保存编译后的包的目标文件，bin保存编译后的可执行程序。
 
+GOROOT用来指定Go的安装目录，以及自带的标准库包位置。GOROOT的目录结构和GOPATH类似。
 
+`go env`用于查看Go语言工具涉及的所有环境变量的值，包括未设置环境变量的默认值。
+
+#### 下载包
+
+`go get`可以下载一个单一的包（真实url和包名不一定相同）或者用`...`下载整个子目录里面的每个包。
+
+`go get -u`命令行参数，更到最新。
+
+如果为了保持依赖包的稳定，可以把依赖包源码放到vendor下，vendor目录会被优先查找。但是这种方式没有记录依赖包的元信息，不能升级，所以出现了govendor解决方案。
+
+#### 构建包
+
+每个包可以由导入路径指定，或者用一个相对目录的路径名指定，相对路径必须以`.`或`..`开头。如果没有指定参数，那么默认指定为当前目录对应的包。
+
+```shell
+# 当前目录
+$ cd $GOPATH/src/gopl.io/ch1/helloworld
+$ go build
+
+# 任意目录
+$ cd anywhere
+$ go build gopl.io/ch1/helloworld
+
+# 相对目录
+$ cd $GOPATH
+$ go build ./src/gopl.io/ch1/helloworld
+
+# 错误，不是相对路径就是以导入路径
+$ cd $GOPATH
+$ go build src/gopl.io/ch1/helloworld
+Error: cannot find package "src/gopl.io/ch1/helloworld".
+```
+
+默认情况下，`go build`命令构建指定的包和它依赖的包，然后丢弃除了最后的可执行文件之外所有的中间编译结果。`go install`会保留中间结果，放在pkg下。
+
+#### 包文档
+
+包中每个导出的成员和包声明前包含目的和用法说明的注释。
+
+如果注释后仅跟着包声明语句，那注释对应整个包的文档。包文档对应的注释只能有一个，包注释可以出现在任何一个源文件中（最后会组合成一个包文档注释）。
+
+#### 内部包
+
+Go对包含internal名字的路径段的包导入路径做了特殊处理。一个internal包只能被和internal目录有同一个父目录的包所导入。
+
+```shell
+# chunked可以被httputil和http导入，url不行，但url可以导入httputil
+net/http
+net/http/internal/chunked
+net/http/httputil
+net/url
+```
+
+#### 查询包
+
+go list命令可以查询可用包的信息。
+
+```shell
+# 测试包是否在工作区并打印它的导入路径
+$ go list github.com/go-sql-driver/mysql
+github.com/go-sql-driver/mysql
+
+# 匹配任意的包的导入路径，列出工作区中的所有包
+$ go list ...
+archive/tar
+archive/zip
+bufio
+bytes
+cmd/addr2line
+cmd/api
+...many more...
+
+# 特定子目录下的所有包
+$ go list gopl.io/ch3/...
+
+# 某个主题相关的所有包
+$ go list ...xml...
+
+# 用JSON格式打印每个包的元信息
+$ go list -json hash
+```
 
 
 ## 测试
@@ -1180,7 +1413,7 @@ pT := uintptr(unsafe.Pointer(new(T))) // 提示: 错误!
 + channel阻塞怎么调度唤醒
 + channel怎么保证并发安全
 + channel显式close or 等待gc
-+ 有没有引用计数
++ 有没有引用计数，怎样算是加了引用（例如指针），可以返回局部变量
 + empty struct大小
 + 线程安全容器
 + Mutex和channel消耗对比
@@ -1192,7 +1425,6 @@ http://marcio.io/2015/07/handling-1-million-requests-per-minute-with-golang/
 The iteration order over maps is not specified and is not guaranteed to be the same from one iteration to the next. If map entries that have not yet been reached are removed during iteration, the corresponding iteration values will not be produced. If map entries are created during iteration, that entry may be produced during the iteration or may be skipped. The choice may vary for each entry created and from one iteration to the next. If the map is nil, the number of iterations is 0.
 
 + 1
-+ 2
 + 3
 + 4
 + 5
@@ -1200,6 +1432,5 @@ The iteration order over maps is not specified and is not guaranteed to be the s
 + 7
 + 8
 + 9
-+ 10
 + 11
 + 12
