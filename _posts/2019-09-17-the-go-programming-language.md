@@ -732,6 +732,10 @@ fmt.Printf("%T\n", distance) // "func(Point, Point) float64"
 
 ### 封装
 
+
+
+
+
 ## 接口
 
 接口是隐式实现的（描述方法集合），只要实现了接口约定的方法就是实现了该接口，不需要显式声明。
@@ -784,14 +788,14 @@ var _ fmt.Stringer = s   // compile error: IntSet lacks String method
 
 ### 接口值
 
-接口值可以使用＝＝和！＝来进行比较。两个接口值相等仅当它们都是nil值或者它们的动态类型相同并且动态值也根据这个动态类型的＝＝操作相等。但是，如果动态类型相同，但类型本身不支持比较，就会panic。
+接口值可以使用`==`和`!=`来进行比较。两个接口值相等仅当它们都是nil值或者它们的动态类型相同并且动态值也根据这个动态类型的`==`操作相等。但是，如果动态类型相同，但类型本身不支持比较，就会panic。
 
 ```go
 var x interface{} = []int{1, 2, 3}
 fmt.Println(x == x)  // panic: comparing uncomparable type []int
 ```
 
-可以包接口抽象为两个指针，分别指向类型和值。特别要说明的是，包含`nil`的接口和`nil`接口是不同的。因为包含`nil`的接口，类型是接口，而`nil`类型空，类型不同就不同，并没有判断值。
+可以把接口抽象为两个指针，分别指向类型和值。特别要说明的是，包含`nil`的接口和`nil`接口是不同的。因为包含`nil`的接口，类型是接口，而`nil`类型为空，类型不同就不同，并没有判断值。
 
 ```go
 func main() {
@@ -1404,7 +1408,6 @@ pT := uintptr(unsafe.Pointer(new(T))) // 提示: 错误!
 
 + 3.6 常量
 + 4.4 结构体
-+ 6.6 封装
 
 + for range修改map
 + 没有重载
@@ -1429,7 +1432,6 @@ The iteration order over maps is not specified and is not guaranteed to be the s
 + 4
 + 5
 + 6
-+ 7
 + 8
 + 9
 + 11
